@@ -1,64 +1,30 @@
-import { Webhook } from "svix";
-import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { error } from "console";
 
-type Event = {
-  type: string;
-  data: {
-    id: string;
-    first_name: string;
-    last_name: string;
-    email_addresses: { email_address: string }[];
-  };
+type Context = {
+  params: Promise<{ id: string }>;
 };
 
-export async function POST(req: NextRequest) {
-  const webhookSecret = process.env.CLERK_WEBHOOK_KEY;
-
-  if (!webhookSecret) {
-    return NextResponse.json(
-      { error: "Missing webhook secret" },
-      { status: 400 },
-    );
-  }
-
-  const svixId = req.headers.get("svix-id");
-  const svixTimestamp = req.headers.get("svix-timestamp");
-  const svixSgnature = req.headers.get("svix-signature");
-
-  if (!svixId || !svixTimestamp || !svixSgnature) {
-    return NextResponse.json({ error: "Missing headers" }, { status: 400 });
-  }
-
-  const webhook = new Webhook(webhookSecret);
-
-  const body = await req.text();
-
+export async function GET(_req: NextRequest, { params }: Context) {
   try {
-    const event = webhook.verify(body, {
-      "svix-id": svixId,
-      "svix-timestamp": svixTimestamp,
-      "svix-signature": svixSgnature,
-    }) as Event;
+    const { id } = await params;
 
-    if (event.type !== "user.created") {
-      return NextResponse.json({ error: "Ignore event" }, { status: 400 });
-    }
-
-    const { email_addresses, first_name, last_name, id } = event.data;
-
-    await prisma.user.create({
-      data: {
-        email: email_addresses[0].email_address,
-        name: `${first_name} ${last_name}`,
-        clerkId: id,
-      },
+    const article = await prisma.article.findUnique({
+      where: { id },
+      include: { quizzes: true },
     });
-    return NextResponse.json({ message: "Success" }, { status: 201 });
+
+    if (!article) {
+      return NextResponse.json({ error: "Article not found" }, { status: 400 });
+    }
+    return NextResponse.json(article, { status: 200 });
   } catch (error) {
+    console.error("GET /api/articles/[id] error:", error);
     return NextResponse.json(
-      { error: `Invalid signature ${error}` },
+      { error: "Failed to fetch article" },
       { status: 500 },
     );
   }
 }
+ 

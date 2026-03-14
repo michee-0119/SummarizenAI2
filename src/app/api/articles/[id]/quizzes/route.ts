@@ -1,6 +1,71 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "@clerk/nextjs/server";
-import { Prisma } from "@prisma/client";
+type Conrext = {
+  params: Promise<{
+    articleId: string;
+  }>;
+};
 
-export async function POST(request: Request, {}) {}
+type QuizInput = {
+  question: string;
+  options: string[];
+  answer: string;
+};
+
+export async function POST(req: NextRequest, { params }: Conrext) {
+  try {
+    const { articleId } = await params;
+    const body = await req.json();
+    const { quizzes, clerkId } = body;
+
+    if (!clerkId) {
+      return NextResponse.json(
+        { error: "clerkId is required" },
+        { status: 400 },
+      );
+    }
+
+    if (!Array.isArray(quizzes) || quizzes.length === 0) {
+      return NextResponse.json(
+        { error: "quizzes must be a non-empty array" },
+        { status: 400 },
+      );
+    }
+
+    const article = await prisma.article.findUnique({
+      where: { id: articleId },
+    });
+
+    if (!article) {
+      return NextResponse.json({ error: "Artcile not found" }, { status: 404 });
+    }
+
+    const createdQuizzes = await Promise.all(
+      quizzes.map((quiz: QuizInput) =>
+        prisma.quiz.create({
+          data: {
+            
+            question: quiz.question,
+            options: quiz.options,
+            answer: quiz.answer,
+            articleId,
+          },
+        }),
+      ),
+    );
+
+    return NextResponse.json(
+      {
+        message: "Quizzes creataed successfully",
+        quizzes: createdQuizzes,
+      },
+      { status: 201 },
+    );
+  } catch (error) {
+    console.error("POST /api/article/[articleId]/quizzes error:", error);
+    return NextResponse.json(
+      { error: "Failed to save quizzes" },
+      { status: 500 },
+    );
+  }
+}
